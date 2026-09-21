@@ -430,12 +430,12 @@ function renderProgress() {
 
   panel.innerHTML = `
     <h2>Main Lifts</h2>
-    <div class="chart-grid">
+    <div class="main-lift-grid">
       ${MAIN_LIFTS.map(
         (m) => `
         <div>
           <h4>${m.name}</h4>
-          <canvas id="main-lift-${m.id}" height="140"></canvas>
+          <div class="main-lift-chart-wrap"><canvas id="main-lift-${m.id}"></canvas></div>
           <p class="muted" id="main-lift-${m.id}-empty" style="display:none">No sessions logged yet for this lift.</p>
         </div>`
       ).join("")}
@@ -459,7 +459,7 @@ function renderProgress() {
 
   MAIN_LIFTS.forEach((m) => {
     const points = strengthPoints(m.name, logs);
-    drawStrengthChart(el(`#main-lift-${m.id}`), m.name, points);
+    drawStrengthChart(el(`#main-lift-${m.id}`), m.name, points, { big: true });
     el(`#main-lift-${m.id}-empty`).style.display = points.length ? "none" : "block";
   });
 
@@ -489,7 +489,7 @@ function strengthPoints(exerciseName, logs) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function drawStrengthChart(ctx, exerciseName, points) {
+function drawStrengthChart(ctx, exerciseName, points, { big = false } = {}) {
   const metric = points[0]?.metric || "est. 1RM (kg) / reps (bodyweight)";
   return new Chart(ctx, {
     type: "line",
@@ -503,10 +503,14 @@ function drawStrengthChart(ctx, exerciseName, points) {
           backgroundColor: "rgba(125,211,192,0.15)",
           tension: 0.25,
           fill: true,
+          pointRadius: big ? 4 : 3,
         },
       ],
     },
-    options: chartOptions((ctx) => `top set: ${points[ctx.dataIndex].label}`),
+    options: {
+      ...chartOptions((ctx) => `top set: ${points[ctx.dataIndex].label}`),
+      maintainAspectRatio: !big,
+    },
   });
 }
 

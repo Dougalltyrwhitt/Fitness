@@ -1,4 +1,4 @@
-# Pre-Season Tracker
+# Fitness Tracker
 
 A structured strength/running program for an extended rugby union pre-season (wing/centre), plus a small static website to log and track progress against it.
 

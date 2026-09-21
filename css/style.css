@@ -295,14 +295,25 @@ form > label { margin-bottom: 0.75rem; }
 
 canvas { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem; margin-bottom: 1rem; }
 
-.chart-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1rem;
+.main-lift-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
   margin-bottom: 1rem;
 }
 
-.chart-grid h4 { margin: 0 0 0.4rem; }
+.main-lift-grid h4 { margin: 0 0 0.4rem; font-size: 1.1rem; }
+
+.main-lift-chart-wrap {
+  position: relative;
+  height: 340px;
+}
+
+.main-lift-chart-wrap canvas { height: 100%; margin-bottom: 0; }
+
+@media (max-width: 640px) {
+  .main-lift-chart-wrap { height: 260px; }
+}
 
 @media (max-width: 640px) {
   .week-grid { grid-template-columns: repeat(7, minmax(100px, 1fr)); }
