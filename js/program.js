@@ -64,7 +64,7 @@ export const PROGRAM = {
       blurb:
         "Strength-biased press work first, hypertrophy accessories after. Trimmed to fit a dumbbells + bench + squat rack home setup and keep this under an hour — presses already hammer the triceps, so a dedicated pushdown isn't needed.",
       exercises: [
-        { name: "Barbell Bench Press", sets: 4, reps: "5", rest: "2–3 min", notes: "RPE 7–8. Progress load once all sets hit 5.", increment: 2.5 },
+        { name: "Barbell Bench Press", sets: 3, reps: "5", rest: "2–3 min", notes: "RPE 7–8. Progress load once all sets hit 5.", increment: 2.5 },
         { name: "Overhead Press", sets: 3, reps: "6–8", rest: "2 min", increment: 2.5 },
         { name: "Incline Dumbbell Press", sets: 3, reps: "10", rest: "90 sec", increment: 2 },
         { name: "Close-Grip Bench Press", sets: 3, reps: "8–10", rest: "90 sec", notes: "Replaces dips — no dip station at home. Narrower grip on the bench bar, elbows tucked.", increment: 2.5 },

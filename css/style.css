@@ -310,6 +310,20 @@ form > label { margin-bottom: 0.75rem; }
   margin-bottom: 1rem;
 }
 
+.reminder-banner {
+  background: rgba(138,182,249,0.15);
+  border: 1px solid var(--run);
+  color: var(--text);
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.reminder-banner a {
+  color: var(--run);
+  font-weight: 600;
+}
+
 .history-card-editing {
   border-color: var(--accent);
 }

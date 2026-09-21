@@ -160,6 +160,29 @@ function currentWeekInfo() {
   return { weekNumber, isDeload: weekNumber > 0 && weekNumber % 4 === 0 };
 }
 
+// ---------- Daily reminder ----------
+// This can only notify while the app is open in a tab (or briefly after, on
+// some browsers) — a true "notify me even if the app is closed" push needs a
+// backend push server, which this static/local-storage site doesn't have.
+
+function todaysUnloggedSessions() {
+  const dayName = DAY_NAMES[new Date().getDay()];
+  const todays = sessionsForDay(dayName);
+  const loggedIds = new Set(store.getLogs().filter((l) => l.date === todayISO()).map((l) => l.sessionId));
+  return todays.filter((s) => !loggedIds.has(s.id));
+}
+
+function maybeShowDailyReminder(force = false) {
+  const settings = store.getSettings();
+  if (!settings.remindersEnabled) return;
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  if (!force && settings.lastReminderShownDate === todayISO()) return;
+  const unlogged = todaysUnloggedSessions();
+  if (!unlogged.length) return;
+  new Notification("Fitness Tracker", { body: `Not logged yet today: ${unlogged.map((s) => s.name).join(", ")}` });
+  store.saveSettings({ lastReminderShownDate: todayISO() });
+}
+
 // ---------- Tab plumbing ----------
 
 const TABS = ["dashboard", "program", "log", "history", "progress", "settings"];
@@ -183,12 +206,18 @@ function renderDashboard() {
   const loggedThisWeek = logs.filter((l) => new Date(l.date) >= weekStart);
   const plannedThisWeek = PROGRAM.week.reduce((n, d) => n + d.sessions.length, 0);
   const { weekNumber, isDeload } = currentWeekInfo();
+  const unlogged = todaysUnloggedSessions();
 
   panel.innerHTML = `
     ${
       isDeload
         ? `<div class="deload-banner">📉 Deload week (week ${weekNumber} of this block) — cut volume ~30–40%: fewer sets, same or lighter weight, shorter long run.</div>`
         : `<p class="muted">Week ${weekNumber} of your program.</p>`
+    }
+    ${
+      unlogged.length
+        ? `<div class="reminder-banner">⏰ Not logged yet today: ${unlogged.map((s) => s.name).join(", ")}. <a href="#" data-goto-log>Log now →</a></div>`
+        : ""
     }
     <h2>Today — ${dayName}</h2>
     <div class="card-grid">
@@ -238,6 +267,11 @@ function renderDashboard() {
       el("#log-session-select").dispatchEvent(new Event("change"));
     })
   );
+
+  el("[data-goto-log]", panel)?.addEventListener("click", (e) => {
+    e.preventDefault();
+    switchTab("log");
+  });
 }
 
 function startOfWeek(date) {
@@ -723,6 +757,9 @@ function renderProgress() {
     <h2>Running Progress</h2>
     <canvas id="run-chart" height="120"></canvas>
 
+    <h2>Sleep Score</h2>
+    <canvas id="sleep-chart" height="120"></canvas>
+
     <h2>Bodyweight</h2>
     <canvas id="bw-chart" height="120"></canvas>
   `;
@@ -733,7 +770,7 @@ function renderProgress() {
     el(`#main-lift-${m.id}-empty`).style.display = points.length ? "none" : "block";
   });
 
-  let strengthChart, runChart, bwChart;
+  let strengthChart, runChart, sleepChart, bwChart;
 
   el("#progress-exercise").addEventListener("change", (e) => {
     strengthChart?.destroy();
@@ -741,6 +778,7 @@ function renderProgress() {
   });
 
   runChart = drawRunChart(logs);
+  sleepChart = drawSleepChart(store.getSleepScores());
   bwChart = drawBodyweightChart(store.getBodyweights());
 }
 
@@ -820,6 +858,28 @@ function drawRunChart(logs) {
   });
 }
 
+function drawSleepChart(sleeps) {
+  const sorted = [...sleeps].sort((a, b) => a.date.localeCompare(b.date));
+  const ctx = el("#sleep-chart");
+  return new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: sorted.map((s) => s.date),
+      datasets: [
+        {
+          label: "Sleep score",
+          data: sorted.map((s) => s.score),
+          borderColor: "#8ab6f9",
+          backgroundColor: "rgba(138,182,249,0.15)",
+          tension: 0.25,
+          fill: true,
+        },
+      ],
+    },
+    options: chartOptions((ctx) => (sorted[ctx.dataIndex].hours ? `${sorted[ctx.dataIndex].hours}h slept` : "")),
+  });
+}
+
 function drawBodyweightChart(bws) {
   const ctx = el("#bw-chart");
   return new Chart(ctx, {
@@ -860,14 +920,51 @@ function chartOptions(tooltipExtra) {
 function renderSettings() {
   const panel = el("#panel-settings");
   const bws = [...store.getBodyweights()].sort((a, b) => b.date.localeCompare(a.date));
+  const sleeps = [...store.getSleepScores()].sort((a, b) => b.date.localeCompare(a.date));
   const { weekNumber, isDeload } = currentWeekInfo();
+  const remindersEnabled = !!store.getSettings().remindersEnabled;
+  const notificationsSupported = typeof Notification !== "undefined";
   panel.innerHTML = `
+    <h2>Daily Reminder</h2>
+    <p class="muted">
+      Shows a banner on the Dashboard whenever today's session(s) haven't been logged. Optionally, it can also fire a
+      browser notification — but only while this site is open in a tab (or briefly after, on some browsers). A true
+      "notify me on my phone even with the app closed" reminder needs a real push server, which this static,
+      local-storage-only site doesn't have — a phone alarm or calendar reminder is more reliable for that today.
+    </p>
+    <div class="field-row">
+      ${
+        !notificationsSupported
+          ? `<p class="muted">Browser notifications aren't supported here.</p>`
+          : remindersEnabled
+          ? `<button class="btn" id="disable-reminders-btn">Notifications on — turn off</button>`
+          : `<button class="btn" id="enable-reminders-btn">Enable browser notifications</button>`
+      }
+    </div>
+
     <h2>Program Timeline</h2>
     <form id="start-date-form" class="field-row">
       <label>Program start date <input type="date" id="program-start-date" value="${getOrInitProgramStart()}"></label>
       <button type="submit" class="btn">Save</button>
     </form>
     <p class="muted">Used to flag deload weeks (every 4th week) on the Dashboard. Currently: week ${weekNumber}${isDeload ? " — deload week" : ""}.</p>
+
+    <h2>Sleep Score</h2>
+    <p class="muted">Logged manually for now — see the note on the Dashboard about automatic sync from Garmin/Strava.</p>
+    <form id="sleep-form" class="field-row">
+      <label>Date <input type="date" id="sleep-date" value="${todayISO()}"></label>
+      <label>Sleep score (0–100) <input type="number" min="0" max="100" id="sleep-score" required></label>
+      <label>Hours slept <input type="number" step="0.1" id="sleep-hours"></label>
+      <button type="submit" class="btn">Add</button>
+    </form>
+    <div class="history-list">
+      ${sleeps
+        .slice(0, 10)
+        .map(
+          (s) => `<div class="card history-card"><div class="history-head"><strong>${fmtDate(s.date)}</strong><span>${s.score}${s.hours ? ` · ${s.hours}h` : ""}</span><button class="btn-link" data-sleep-delete="${s.id}">delete</button></div></div>`
+        )
+        .join("")}
+    </div>
 
     <h2>Bodyweight Log</h2>
     <form id="bw-form" class="field-row">
@@ -895,6 +992,22 @@ function renderSettings() {
     </div>
   `;
 
+  el("#enable-reminders-btn")?.addEventListener("click", async () => {
+    const perm = await Notification.requestPermission();
+    if (perm === "granted") {
+      store.saveSettings({ remindersEnabled: true });
+      maybeShowDailyReminder(true);
+    } else {
+      alert("Notification permission wasn't granted — check your browser's site settings if you want to try again.");
+    }
+    renderSettings();
+  });
+
+  el("#disable-reminders-btn")?.addEventListener("click", () => {
+    store.saveSettings({ remindersEnabled: false });
+    renderSettings();
+  });
+
   el("#start-date-form").addEventListener("submit", (e) => {
     e.preventDefault();
     store.saveSettings({ programStartDate: el("#program-start-date").value });
@@ -910,6 +1023,23 @@ function renderSettings() {
   els("[data-bw-delete]", panel).forEach((btn) =>
     btn.addEventListener("click", () => {
       store.deleteBodyweight(btn.dataset.bwDelete);
+      renderSettings();
+    })
+  );
+
+  el("#sleep-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    store.saveSleepScore({
+      date: el("#sleep-date").value,
+      score: parseInt(el("#sleep-score").value, 10),
+      hours: el("#sleep-hours").value ? parseFloat(el("#sleep-hours").value) : null,
+    });
+    renderSettings();
+  });
+
+  els("[data-sleep-delete]", panel).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      store.deleteSleepScore(btn.dataset.sleepDelete);
       renderSettings();
     })
   );
@@ -950,6 +1080,7 @@ function init() {
   els(".tab-btn").forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
   const initial = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "dashboard";
   switchTab(initial);
+  maybeShowDailyReminder();
 }
 
 init();

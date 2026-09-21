@@ -3,6 +3,7 @@
 
 const LOGS_KEY = "ft_logs_v1";
 const BODYWEIGHT_KEY = "ft_bodyweight_v1";
+const SLEEP_KEY = "ft_sleep_v1";
 const SETTINGS_KEY = "ft_settings_v1";
 
 function readJSON(key, fallback) {
@@ -64,6 +65,21 @@ export function deleteBodyweight(id) {
   writeJSON(BODYWEIGHT_KEY, getBodyweights().filter((b) => b.id !== id));
 }
 
+export function getSleepScores() {
+  return readJSON(SLEEP_KEY, []);
+}
+
+export function saveSleepScore(entry) {
+  const list = getSleepScores().filter((s) => s.date !== entry.date);
+  list.push({ id: uid(), ...entry });
+  list.sort((a, b) => a.date.localeCompare(b.date));
+  writeJSON(SLEEP_KEY, list);
+}
+
+export function deleteSleepScore(id) {
+  writeJSON(SLEEP_KEY, getSleepScores().filter((s) => s.id !== id));
+}
+
 export function getSettings() {
   return readJSON(SETTINGS_KEY, {});
 }
@@ -76,7 +92,13 @@ export function saveSettings(patch) {
 
 export function exportAll() {
   return JSON.stringify(
-    { logs: getLogs(), bodyweights: getBodyweights(), settings: getSettings(), exportedAt: new Date().toISOString() },
+    {
+      logs: getLogs(),
+      bodyweights: getBodyweights(),
+      sleepScores: getSleepScores(),
+      settings: getSettings(),
+      exportedAt: new Date().toISOString(),
+    },
     null,
     2
   );
@@ -87,11 +109,13 @@ export function importAll(json) {
   if (!Array.isArray(data.logs)) throw new Error("Invalid backup file: missing logs array");
   writeJSON(LOGS_KEY, data.logs);
   writeJSON(BODYWEIGHT_KEY, Array.isArray(data.bodyweights) ? data.bodyweights : []);
+  writeJSON(SLEEP_KEY, Array.isArray(data.sleepScores) ? data.sleepScores : []);
   writeJSON(SETTINGS_KEY, data.settings && typeof data.settings === "object" ? data.settings : {});
 }
 
 export function resetAll() {
   localStorage.removeItem(LOGS_KEY);
   localStorage.removeItem(BODYWEIGHT_KEY);
+  localStorage.removeItem(SLEEP_KEY);
   localStorage.removeItem(SETTINGS_KEY);
 }
