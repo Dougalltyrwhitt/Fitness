@@ -53,7 +53,7 @@ export const PROGRAM = {
         { name: "Romanian Deadlift", sets: 3, reps: "8", rest: "2 min", notes: "Posterior chain — hamstrings/glutes for sprinting and tackling." },
         { name: "Bulgarian Split Squat", sets: 3, reps: "10 / leg", rest: "90 sec", notes: "Unilateral strength + knee stability for cutting." },
         { name: "Standing Calf Raise", sets: 3, reps: "15", rest: "60 sec" },
-        { name: "Pallof Press", sets: 3, reps: "12 / side", rest: "60 sec", notes: "Anti-rotation core — helps with fending and passing under load." },
+        { name: "Dumbbell Russian Twist", sets: 3, reps: "12 / side", rest: "60 sec", notes: "Rotational power/core using just a dumbbell — same fending/passing carryover as a Pallof press, no cable needed." },
       ],
     },
 
@@ -61,14 +61,14 @@ export const PROGRAM = {
       type: "gym",
       name: "Upper Body — Push",
       when: "Tuesday evening",
-      blurb: "Strength-biased press work first, hypertrophy accessories after.",
+      blurb:
+        "Strength-biased press work first, hypertrophy accessories after. Trimmed to fit a dumbbells + bench + squat rack home setup and keep this under an hour — presses already hammer the triceps, so a dedicated pushdown isn't needed.",
       exercises: [
         { name: "Barbell Bench Press", sets: 4, reps: "5", rest: "2–3 min", notes: "RPE 7–8. Progress load once all sets hit 5." },
         { name: "Overhead Press", sets: 3, reps: "6–8", rest: "2 min" },
         { name: "Incline Dumbbell Press", sets: 3, reps: "10", rest: "90 sec" },
-        { name: "Weighted Dip (or Close-Grip Bench)", sets: 3, reps: "8–10", rest: "90 sec" },
+        { name: "Close-Grip Bench Press", sets: 3, reps: "8–10", rest: "90 sec", notes: "Replaces dips — no dip station at home. Narrower grip on the bench bar, elbows tucked." },
         { name: "Dumbbell Lateral Raise", sets: 3, reps: "12–15", rest: "60 sec" },
-        { name: "Triceps Rope Pushdown", sets: 3, reps: "12–15", rest: "60 sec" },
       ],
     },
 
@@ -77,12 +77,11 @@ export const PROGRAM = {
       name: "Upper Body — Pull",
       when: "Friday",
       blurb:
-        "Deliberately upper-only and placed after Wed/Thu game nights so your legs get to recover before Saturday's long run. Face pulls are non-negotiable — shoulder health matters a lot when you're getting tackled.",
+        "Deliberately upper-only and placed after Wed/Thu game nights so your legs get to recover before Saturday's long run. No cable machine at home, so seated rows and face pulls are swapped for a single-arm dumbbell row — if you ever get hold of a resistance band, band pull-aparts are worth adding back for shoulder health, but it's not essential.",
       exercises: [
-        { name: "Weighted Pull-Up (or Lat Pulldown)", sets: 4, reps: "6–8", rest: "2 min" },
+        { name: "Weighted Pull-Up", sets: 4, reps: "6–8", rest: "2 min" },
         { name: "Barbell Bent-Over Row", sets: 4, reps: "6–8", rest: "2 min" },
-        { name: "Seated Cable Row", sets: 3, reps: "10", rest: "90 sec" },
-        { name: "Face Pull", sets: 3, reps: "15", rest: "60 sec", notes: "Shoulder health — don't skip this given the contact." },
+        { name: "Single-Arm Dumbbell Row", sets: 3, reps: "10 / arm", rest: "90 sec" },
         { name: "Barbell or DB Curl", sets: 3, reps: "10–12", rest: "60 sec" },
         { name: "Hammer Curl", sets: 3, reps: "12", rest: "60 sec" },
         { name: "Hanging Knee Raise / Weighted Sit-Up", sets: 3, reps: "12–15", rest: "60 sec" },
@@ -98,8 +97,8 @@ export const PROGRAM = {
       optional: true,
       exercises: [
         { name: "Dumbbell Shoulder Press", sets: 3, reps: "10", rest: "60 sec" },
-        { name: "Chest-Supported Row", sets: 3, reps: "12", rest: "60 sec" },
-        { name: "EZ-Bar Curl", sets: 3, reps: "12", rest: "60 sec" },
+        { name: "Barbell Bench Press", sets: 3, reps: "12", rest: "60 sec", notes: "Light accessory pump set — no row machine at home, so this replaces chest-supported row for extra volume." },
+        { name: "Barbell Curl", sets: 3, reps: "12", rest: "60 sec" },
         { name: "Overhead Triceps Extension", sets: 3, reps: "12", rest: "60 sec" },
         { name: "Plank", sets: 3, reps: "45 sec", rest: "45 sec" },
         { name: "Side Plank", sets: 2, reps: "30 sec / side", rest: "30 sec" },
@@ -185,6 +184,7 @@ export const PROGRAM = {
     "Protein target ~1.8–2.2 g/kg bodyweight/day to support the hypertrophy work alongside this much conditioning.",
     "Sleep 7–9 hours — with two-a-days on Tuesday and Thursday plus back-to-back game nights, sleep is doing a lot of the recovery work.",
     "Track bodyweight weekly, same day/time, to see muscle gain vs fat trend rather than day-to-day noise.",
+    "Equipment: written for a home setup with dumbbells, a squat rack and a bench — no cable machine or dip station, so those exercises were swapped for dumbbell/barbell equivalents and a couple of accessories were trimmed to keep sessions under an hour.",
   ],
 
   weeklyTotals: {

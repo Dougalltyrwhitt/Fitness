@@ -27,8 +27,24 @@ function epley1RM(weight, reps) {
 }
 
 function bestSet(sets) {
-  return sets.reduce((best, s) => (epley1RM(s.weight, s.reps) > epley1RM(best.weight, best.reps) ? s : best), sets[0] || { weight: 0, reps: 0 });
+  const score = (s) => epley1RM(s.weight, s.reps) || s.reps || 0;
+  return sets.reduce((best, s) => (score(s) > score(best) ? s : best), sets[0] || { weight: 0, reps: 0 });
 }
+
+// Bodyweight-only lifts (e.g. unweighted pull-ups) have no est. 1RM to chart —
+// fall back to reps in that case instead of dropping the point entirely.
+function progressValue(b) {
+  if (b.weight > 0) {
+    return { value: Math.round(epley1RM(b.weight, b.reps) * 10) / 10, label: `${b.weight}kg × ${b.reps}`, metric: "est. 1RM (kg)" };
+  }
+  return { value: b.reps, label: `${b.reps} reps (bodyweight)`, metric: "reps (bodyweight)" };
+}
+
+const MAIN_LIFTS = [
+  { id: "squat", name: "Back Squat" },
+  { id: "bench", name: "Barbell Bench Press" },
+  { id: "pullup", name: "Weighted Pull-Up" },
+];
 
 // ---------- Tab plumbing ----------
 
@@ -410,13 +426,26 @@ function renderProgress() {
   const logs = store.getLogs();
   const exerciseNames = new Set();
   logs.forEach((l) => l.sessionType === "gym" && l.exercises.forEach((e) => exerciseNames.add(e.name)));
+  const otherNames = [...exerciseNames].filter((n) => !MAIN_LIFTS.some((m) => m.name === n));
 
   panel.innerHTML = `
-    <h2>Strength Progress</h2>
+    <h2>Main Lifts</h2>
+    <div class="chart-grid">
+      ${MAIN_LIFTS.map(
+        (m) => `
+        <div>
+          <h4>${m.name}</h4>
+          <canvas id="main-lift-${m.id}" height="140"></canvas>
+          <p class="muted" id="main-lift-${m.id}-empty" style="display:none">No sessions logged yet for this lift.</p>
+        </div>`
+      ).join("")}
+    </div>
+
+    <h2>Other Exercises</h2>
     <label>Exercise
       <select id="progress-exercise">
         <option value="">— choose —</option>
-        ${[...exerciseNames].map((n) => `<option value="${n}">${n}</option>`).join("")}
+        ${otherNames.map((n) => `<option value="${n}">${n}</option>`).join("")}
       </select>
     </label>
     <canvas id="strength-chart" height="120"></canvas>
@@ -428,42 +457,48 @@ function renderProgress() {
     <canvas id="bw-chart" height="120"></canvas>
   `;
 
+  MAIN_LIFTS.forEach((m) => {
+    const points = strengthPoints(m.name, logs);
+    drawStrengthChart(el(`#main-lift-${m.id}`), m.name, points);
+    el(`#main-lift-${m.id}-empty`).style.display = points.length ? "none" : "block";
+  });
+
   let strengthChart, runChart, bwChart;
 
   el("#progress-exercise").addEventListener("change", (e) => {
     strengthChart?.destroy();
-    strengthChart = drawStrengthChart(e.target.value, logs);
+    strengthChart = drawStrengthChart(el("#strength-chart"), e.target.value, strengthPoints(e.target.value, logs));
   });
 
   runChart = drawRunChart(logs);
   bwChart = drawBodyweightChart(store.getBodyweights());
 }
 
-function drawStrengthChart(exerciseName, logs) {
-  const ctx = el("#strength-chart");
-  if (!exerciseName) {
-    return new Chart(ctx, { type: "line", data: { labels: [], datasets: [] } });
-  }
-  const points = logs
+function strengthPoints(exerciseName, logs) {
+  if (!exerciseName) return [];
+  return logs
     .filter((l) => l.sessionType === "gym")
     .map((l) => {
       const ex = l.exercises.find((e) => e.name === exerciseName);
-      if (!ex) return null;
+      if (!ex || !ex.sets.length) return null;
       const b = bestSet(ex.sets);
-      if (!b.weight) return null;
-      return { date: l.date, est1rm: Math.round(epley1RM(b.weight, b.reps) * 10) / 10, top: `${b.weight}kg×${b.reps}` };
+      if (!b.weight && !b.reps) return null;
+      return { date: l.date, ...progressValue(b) };
     })
     .filter(Boolean)
     .sort((a, b) => a.date.localeCompare(b.date));
+}
 
+function drawStrengthChart(ctx, exerciseName, points) {
+  const metric = points[0]?.metric || "est. 1RM (kg) / reps (bodyweight)";
   return new Chart(ctx, {
     type: "line",
     data: {
       labels: points.map((p) => p.date),
       datasets: [
         {
-          label: `${exerciseName} — estimated 1RM (kg)`,
-          data: points.map((p) => p.est1rm),
+          label: exerciseName ? `${exerciseName} — ${metric}` : "",
+          data: points.map((p) => p.value),
           borderColor: "#7dd3c0",
           backgroundColor: "rgba(125,211,192,0.15)",
           tension: 0.25,
@@ -471,7 +506,7 @@ function drawStrengthChart(exerciseName, logs) {
         },
       ],
     },
-    options: chartOptions((ctx) => `top set: ${points[ctx.dataIndex].top}`),
+    options: chartOptions((ctx) => `top set: ${points[ctx.dataIndex].label}`),
   });
 }
 
