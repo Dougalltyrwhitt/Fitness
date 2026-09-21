@@ -46,6 +46,120 @@ const MAIN_LIFTS = [
   { id: "pullup", name: "Weighted Pull-Up" },
 ];
 
+// ---------- Progression suggestions ----------
+
+function parseRepsTarget(repsStr) {
+  if (!repsStr || /sec/i.test(repsStr)) return null;
+  const range = repsStr.match(/(\d+)\s*[–-]\s*(\d+)/);
+  if (range) return { max: parseInt(range[2], 10) };
+  const single = repsStr.match(/(\d+)/);
+  if (single) return { max: parseInt(single[1], 10) };
+  return null;
+}
+
+function progressionSuggestion(ex, logs) {
+  if (!ex.increment) return null;
+  const target = parseRepsTarget(ex.reps);
+  if (!target) return null;
+  const last = logs
+    .filter((l) => l.sessionType === "gym")
+    .flatMap((l) => l.exercises.filter((e) => e.name === ex.name && e.sets.some((s) => s.reps > 0)).map((e) => ({ date: l.date, sets: e.sets })))
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!last) return null;
+
+  const topWeight = Math.max(...last.sets.map((s) => s.weight));
+  const bestReps = Math.max(...last.sets.map((s) => s.reps));
+  const allHitTop = last.sets.every((s) => s.reps >= target.max);
+  const weightLabel = topWeight > 0 ? `${topWeight}kg` : "bodyweight";
+
+  if (allHitTop) {
+    const nextWeight = Math.round((topWeight + ex.increment) * 2) / 2;
+    const suggestion = topWeight > 0 ? `${nextWeight}kg` : `+${ex.increment}kg added`;
+    return `Last time: ${weightLabel} × ${target.max} across all sets — try ${suggestion} today.`;
+  }
+  return `Last time: ${weightLabel}, best set ${bestReps} reps — repeat that and aim for ${target.max} across all sets before adding load.`;
+}
+
+// ---------- Personal records ----------
+
+function computePRs(logs) {
+  const bestWeighted = {};
+  const bestBodyweight = {};
+  const bestDistance = {};
+  const bestPace = {};
+  const prByLogId = {};
+  const markPR = (logId, section, key, value) => {
+    const entry = (prByLogId[logId] ??= { gym: {}, run: {} });
+    entry[section][key] = value;
+  };
+
+  [...logs]
+    .filter((l) => l.sessionType === "gym")
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || "").localeCompare(b.createdAt || ""))
+    .forEach((l) => {
+      l.exercises.forEach((e) => {
+        if (!e.sets.length) return;
+        const b = bestSet(e.sets);
+        if (b.weight > 0) {
+          const est = epley1RM(b.weight, b.reps);
+          if (est > (bestWeighted[e.name] || 0)) {
+            bestWeighted[e.name] = est;
+            markPR(l.id, "gym", e.name, "weight");
+          }
+        } else if (b.reps > 0) {
+          if (b.reps > (bestBodyweight[e.name] || 0)) {
+            bestBodyweight[e.name] = b.reps;
+            markPR(l.id, "gym", e.name, "bodyweight");
+          }
+        }
+      });
+    });
+
+  [...logs]
+    .filter((l) => l.sessionType === "run")
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || "").localeCompare(b.createdAt || ""))
+    .forEach((l) => {
+      if (l.distanceKm > (bestDistance[l.sessionId] || 0)) {
+        bestDistance[l.sessionId] = l.distanceKm;
+        markPR(l.id, "run", "distance", true);
+      }
+      const pace = l.pace ? parseFloat(l.pace) : null;
+      if (pace && l.distanceKm >= 1 && (bestPace[l.sessionId] == null || pace < bestPace[l.sessionId])) {
+        bestPace[l.sessionId] = pace;
+        markPR(l.id, "run", "pace", true);
+      }
+    });
+
+  return { prByLogId, bestWeighted, bestBodyweight, bestDistance, bestPace };
+}
+
+function prMessage(prEntry) {
+  if (!prEntry) return null;
+  const parts = [];
+  Object.keys(prEntry.gym || {}).forEach((name) => parts.push(`${name} PR`));
+  if (prEntry.run?.distance) parts.push("distance PR");
+  if (prEntry.run?.pace) parts.push("pace PR");
+  return parts.length ? `🏆 New PR! ${parts.join(", ")}` : null;
+}
+
+// ---------- Program timeline / deload ----------
+
+function getOrInitProgramStart() {
+  const settings = store.getSettings();
+  if (settings.programStartDate) return settings.programStartDate;
+  const start = todayISO();
+  store.saveSettings({ programStartDate: start });
+  return start;
+}
+
+function currentWeekInfo() {
+  const startWeek = startOfWeek(new Date(getOrInitProgramStart() + "T00:00:00"));
+  const thisWeek = startOfWeek(new Date());
+  const weeksElapsed = Math.round((thisWeek - startWeek) / (7 * 86400000));
+  const weekNumber = weeksElapsed + 1;
+  return { weekNumber, isDeload: weekNumber > 0 && weekNumber % 4 === 0 };
+}
+
 // ---------- Tab plumbing ----------
 
 const TABS = ["dashboard", "program", "log", "history", "progress", "settings"];
@@ -68,8 +182,14 @@ function renderDashboard() {
   const weekStart = startOfWeek(new Date());
   const loggedThisWeek = logs.filter((l) => new Date(l.date) >= weekStart);
   const plannedThisWeek = PROGRAM.week.reduce((n, d) => n + d.sessions.length, 0);
+  const { weekNumber, isDeload } = currentWeekInfo();
 
   panel.innerHTML = `
+    ${
+      isDeload
+        ? `<div class="deload-banner">📉 Deload week (week ${weekNumber} of this block) — cut volume ~30–40%: fewer sets, same or lighter weight, shorter long run.</div>`
+        : `<p class="muted">Week ${weekNumber} of your program.</p>`
+    }
     <h2>Today — ${dayName}</h2>
     <div class="card-grid">
       ${todays
@@ -224,6 +344,7 @@ function lastLogForSession(sessionId) {
 function renderLogFormBody(sessionId) {
   const container = el("#log-form-body");
   const session = { id: sessionId, ...PROGRAM.sessions[sessionId] };
+  const logs = store.getLogs();
   const last = lastLogForSession(sessionId);
 
   if (session.type === "gym") {
@@ -233,9 +354,11 @@ function renderLogFormBody(sessionId) {
         ${session.exercises
           .map((ex, i) => {
             const lastEx = last?.exercises?.find((e) => e.name === ex.name);
+            const suggestion = progressionSuggestion(ex, logs);
             return `
             <div class="exercise-log-block">
               <h4>${ex.name} <span class="muted">— target ${ex.sets} × ${ex.reps}</span></h4>
+              ${suggestion ? `<p class="suggestion">${suggestion}</p>` : ""}
               <div class="sets-grid" data-exercise="${i}">
                 ${Array.from({ length: ex.sets })
                   .map((_, si) => {
@@ -266,7 +389,7 @@ function renderLogFormBody(sessionId) {
         }));
         return { name: ex.name, sets };
       });
-      store.saveLog({
+      const record = store.saveLog({
         date: el("#log-date").value,
         sessionId,
         sessionType: "gym",
@@ -274,8 +397,9 @@ function renderLogFormBody(sessionId) {
         exercises,
         notes: el("#log-notes").value,
       });
-      flashSaved(container);
+      const prEntry = computePRs(store.getLogs()).prByLogId[record.id];
       renderLogFormBody(sessionId);
+      flashSaved(container, prMessage(prEntry) || "Saved.");
     });
   } else if (session.type === "run") {
     container.innerHTML = `
@@ -294,7 +418,7 @@ function renderLogFormBody(sessionId) {
       e.preventDefault();
       const distanceKm = parseFloat(el("#run-distance").value) || 0;
       const durationMin = parseFloat(el("#run-duration").value) || 0;
-      store.saveLog({
+      const record = store.saveLog({
         date: el("#log-date").value,
         sessionId,
         sessionType: "run",
@@ -306,8 +430,9 @@ function renderLogFormBody(sessionId) {
         rpe: el("#run-rpe").value ? parseInt(el("#run-rpe").value, 10) : null,
         notes: el("#log-notes").value,
       });
-      flashSaved(container);
+      const prEntry = computePRs(store.getLogs()).prByLogId[record.id];
       renderLogFormBody(sessionId);
+      flashSaved(container, prMessage(prEntry) || "Saved.");
     });
   } else if (session.type === "sprint") {
     container.innerHTML = `
@@ -331,8 +456,8 @@ function renderLogFormBody(sessionId) {
         rpe: el("#sprint-rpe").value ? parseInt(el("#sprint-rpe").value, 10) : null,
         notes: el("#log-notes").value,
       });
-      flashSaved(container);
       renderLogFormBody(sessionId);
+      flashSaved(container);
     });
   } else if (session.type === "game" || session.type === "mobility") {
     container.innerHTML = `
@@ -354,60 +479,147 @@ function renderLogFormBody(sessionId) {
         rpe: el("#simple-rpe").value ? parseInt(el("#simple-rpe").value, 10) : null,
         notes: el("#log-notes").value,
       });
-      flashSaved(container);
       renderLogFormBody(sessionId);
+      flashSaved(container);
     });
   }
 }
 
-function flashSaved(container) {
+function flashSaved(container, message = "Saved.") {
   const note = document.createElement("div");
-  note.className = "saved-toast";
-  note.textContent = "Saved.";
+  note.className = message.startsWith("🏆") ? "saved-toast saved-toast-pr" : "saved-toast";
+  note.textContent = message;
   container.prepend(note);
-  setTimeout(() => note.remove(), 1800);
+  setTimeout(() => note.remove(), message.startsWith("🏆") ? 3200 : 1800);
 }
 
 // ---------- History ----------
 
+let historyEditingId = null;
+
 function renderHistory() {
   const panel = el("#panel-history");
   const logs = [...store.getLogs()].sort((a, b) => b.date.localeCompare(a.date));
+  const prByLogId = computePRs(store.getLogs()).prByLogId;
 
   panel.innerHTML = `
     <h2>History</h2>
     ${logs.length === 0 ? `<p class="muted">Nothing logged yet — head to the Log tab.</p>` : ""}
     <div class="history-list">
-      ${logs
-        .map((l) => {
-          let summary = "";
-          if (l.sessionType === "gym") {
-            summary = l.exercises
-              .map((e) => {
-                const b = bestSet(e.sets);
-                return b.weight ? `${e.name}: top set ${b.weight}kg × ${b.reps}` : "";
-              })
-              .filter(Boolean)
-              .join(" · ");
-          } else if (l.sessionType === "run") {
-            summary = `${l.distanceKm}km in ${l.durationMin}min${l.pace ? ` (${l.pace} min/km)` : ""}`;
-          } else if (l.rpe) {
-            summary = `RPE ${l.rpe}`;
-          }
-          return `
-          <div class="card history-card">
-            <div class="history-head">
-              <strong>${fmtDate(l.date)}</strong>
-              <span class="badge">${l.sessionName}</span>
-              <button class="btn-link" data-delete="${l.id}">delete</button>
-            </div>
-            <p class="muted">${summary}</p>
-            ${l.notes ? `<p>${l.notes}</p>` : ""}
-          </div>`;
-        })
-        .join("")}
+      ${logs.map((l) => (l.id === historyEditingId ? renderHistoryEditCard(l) : renderHistoryViewCard(l, prByLogId[l.id]))).join("")}
     </div>
   `;
+
+  wireHistoryCards(panel, logs);
+}
+
+function renderHistoryViewCard(l, pr) {
+  let summary = "";
+  if (l.sessionType === "gym") {
+    summary = l.exercises
+      .map((e) => {
+        const b = bestSet(e.sets);
+        if (!b.weight && !b.reps) return "";
+        const val = b.weight ? `${b.weight}kg × ${b.reps}` : `${b.reps} reps (bodyweight)`;
+        return `${e.name}: top set ${val}${pr?.gym?.[e.name] ? " 🏆" : ""}`;
+      })
+      .filter(Boolean)
+      .join(" · ");
+  } else if (l.sessionType === "run") {
+    summary = `${l.distanceKm}km in ${l.durationMin}min${l.pace ? ` (${l.pace} min/km)` : ""}`;
+    if (pr?.run?.distance) summary += " 🏆 distance PR";
+    if (pr?.run?.pace) summary += " 🏆 pace PR";
+  } else if (l.rpe) {
+    summary = `RPE ${l.rpe}`;
+  }
+  return `
+  <div class="card history-card">
+    <div class="history-head">
+      <strong>${fmtDate(l.date)}</strong>
+      <span class="badge">${l.sessionName}</span>
+      <button class="btn-link" data-edit="${l.id}">edit</button>
+      <button class="btn-link" data-delete="${l.id}">delete</button>
+    </div>
+    <p class="muted">${summary}</p>
+    ${l.notes ? `<p>${l.notes}</p>` : ""}
+  </div>`;
+}
+
+function renderHistoryEditCard(l) {
+  let fields = "";
+  if (l.sessionType === "gym") {
+    fields = l.exercises
+      .map(
+        (e, i) => `
+      <div class="exercise-log-block">
+        <h4>${e.name}</h4>
+        <div class="sets-grid" data-exercise="${i}">
+          ${e.sets
+            .map(
+              (s, si) => `
+            <div class="set-input">
+              <span>Set ${si + 1}</span>
+              <input type="number" step="0.5" value="${s.weight}" data-weight>
+              <input type="number" value="${s.reps}" data-reps>
+            </div>`
+            )
+            .join("")}
+        </div>
+      </div>`
+      )
+      .join("");
+  } else if (l.sessionType === "run") {
+    fields = `
+      <div class="field-row">
+        <label>Distance (km) <input type="number" step="0.01" id="edit-distance" value="${l.distanceKm}"></label>
+        <label>Duration (min) <input type="number" step="0.5" id="edit-duration" value="${l.durationMin}"></label>
+        <label>RPE <input type="number" min="1" max="10" id="edit-rpe" value="${l.rpe ?? ""}"></label>
+      </div>`;
+  } else if (l.sessionType === "sprint") {
+    fields = `
+      <div class="field-row">
+        <label>Sprint reps <input type="number" id="edit-reps" value="${l.reps ?? ""}"></label>
+        <label>RPE <input type="number" min="1" max="10" id="edit-rpe" value="${l.rpe ?? ""}"></label>
+      </div>`;
+  } else {
+    fields = `
+      <div class="field-row">
+        <label>RPE <input type="number" min="1" max="10" id="edit-rpe" value="${l.rpe ?? ""}"></label>
+      </div>`;
+  }
+
+  return `
+  <div class="card history-card history-card-editing">
+    <div class="history-head">
+      <strong>${l.sessionName}</strong>
+      <span class="badge">editing</span>
+    </div>
+    <form data-edit-form="${l.id}">
+      <label>Date <input type="date" id="edit-date" value="${l.date}"></label>
+      ${fields}
+      <label>Notes <textarea id="edit-notes" rows="2">${l.notes || ""}</textarea></label>
+      <div class="field-row">
+        <button type="submit" class="btn">Save changes</button>
+        <button type="button" class="btn-link" data-cancel-edit="${l.id}">Cancel</button>
+      </div>
+    </form>
+  </div>`;
+}
+
+function wireHistoryCards(panel, logs) {
+  els("[data-edit]", panel).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      historyEditingId = btn.dataset.edit;
+      renderHistory();
+    })
+  );
+
+  els("[data-cancel-edit]", panel).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      historyEditingId = null;
+      renderHistory();
+    })
+  );
 
   els("[data-delete]", panel).forEach((btn) =>
     btn.addEventListener("click", () => {
@@ -417,6 +629,42 @@ function renderHistory() {
       }
     })
   );
+
+  els("[data-edit-form]", panel).forEach((form) => {
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const id = form.dataset.editForm;
+      const log = logs.find((l) => l.id === id);
+      const patch = { date: el("#edit-date", form).value, notes: el("#edit-notes", form).value };
+
+      if (log.sessionType === "gym") {
+        patch.exercises = log.exercises.map((ex, i) => {
+          const block = el(`.sets-grid[data-exercise="${i}"]`, form);
+          const sets = els(".set-input", block).map((row) => ({
+            weight: parseFloat(el("[data-weight]", row).value) || 0,
+            reps: parseInt(el("[data-reps]", row).value, 10) || 0,
+          }));
+          return { name: ex.name, sets };
+        });
+      } else if (log.sessionType === "run") {
+        const distanceKm = parseFloat(el("#edit-distance", form).value) || 0;
+        const durationMin = parseFloat(el("#edit-duration", form).value) || 0;
+        patch.distanceKm = distanceKm;
+        patch.durationMin = durationMin;
+        patch.pace = durationMin && distanceKm ? (durationMin / distanceKm).toFixed(2) : null;
+        patch.rpe = el("#edit-rpe", form).value ? parseInt(el("#edit-rpe", form).value, 10) : null;
+      } else if (log.sessionType === "sprint") {
+        patch.reps = el("#edit-reps", form).value ? parseInt(el("#edit-reps", form).value, 10) : null;
+        patch.rpe = el("#edit-rpe", form).value ? parseInt(el("#edit-rpe", form).value, 10) : null;
+      } else {
+        patch.rpe = el("#edit-rpe", form).value ? parseInt(el("#edit-rpe", form).value, 10) : null;
+      }
+
+      store.updateLog(id, patch);
+      historyEditingId = null;
+      renderHistory();
+    });
+  });
 }
 
 // ---------- Progress ----------
@@ -427,8 +675,30 @@ function renderProgress() {
   const exerciseNames = new Set();
   logs.forEach((l) => l.sessionType === "gym" && l.exercises.forEach((e) => exerciseNames.add(e.name)));
   const otherNames = [...exerciseNames].filter((n) => !MAIN_LIFTS.some((m) => m.name === n));
+  const prData = computePRs(logs);
+  const runSessions = Object.entries(PROGRAM.sessions).filter(([, s]) => s.type === "run");
 
   panel.innerHTML = `
+    <h2>Personal Bests</h2>
+    <div class="card-grid">
+      ${MAIN_LIFTS.map((m) => {
+        const w = prData.bestWeighted[m.name];
+        const bw = prData.bestBodyweight[m.name];
+        const text = w ? `${Math.round(w * 10) / 10}kg est. 1RM` : bw ? `${bw} reps (bodyweight)` : "No data yet";
+        return `<div class="card"><h4>${m.name}</h4><p class="muted">${text}</p></div>`;
+      }).join("")}
+      ${runSessions
+        .map(([id, s]) => {
+          const dist = prData.bestDistance[id];
+          const pace = prData.bestPace[id];
+          const parts = [];
+          if (dist) parts.push(`Longest: ${dist}km`);
+          if (pace) parts.push(`Fastest: ${pace} min/km`);
+          return `<div class="card"><h4>${s.name}</h4><p class="muted">${parts.length ? parts.join(" · ") : "No data yet"}</p></div>`;
+        })
+        .join("")}
+    </div>
+
     <h2>Main Lifts</h2>
     <div class="main-lift-grid">
       ${MAIN_LIFTS.map(
@@ -590,7 +860,15 @@ function chartOptions(tooltipExtra) {
 function renderSettings() {
   const panel = el("#panel-settings");
   const bws = [...store.getBodyweights()].sort((a, b) => b.date.localeCompare(a.date));
+  const { weekNumber, isDeload } = currentWeekInfo();
   panel.innerHTML = `
+    <h2>Program Timeline</h2>
+    <form id="start-date-form" class="field-row">
+      <label>Program start date <input type="date" id="program-start-date" value="${getOrInitProgramStart()}"></label>
+      <button type="submit" class="btn">Save</button>
+    </form>
+    <p class="muted">Used to flag deload weeks (every 4th week) on the Dashboard. Currently: week ${weekNumber}${isDeload ? " — deload week" : ""}.</p>
+
     <h2>Bodyweight Log</h2>
     <form id="bw-form" class="field-row">
       <label>Date <input type="date" id="bw-date" value="${todayISO()}"></label>
@@ -616,6 +894,12 @@ function renderSettings() {
       <button class="btn btn-danger" id="reset-btn">Reset all data</button>
     </div>
   `;
+
+  el("#start-date-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    store.saveSettings({ programStartDate: el("#program-start-date").value });
+    renderSettings();
+  });
 
   el("#bw-form").addEventListener("submit", (e) => {
     e.preventDefault();

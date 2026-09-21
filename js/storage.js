@@ -3,6 +3,7 @@
 
 const LOGS_KEY = "ft_logs_v1";
 const BODYWEIGHT_KEY = "ft_bodyweight_v1";
+const SETTINGS_KEY = "ft_settings_v1";
 
 function readJSON(key, fallback) {
   try {
@@ -63,9 +64,19 @@ export function deleteBodyweight(id) {
   writeJSON(BODYWEIGHT_KEY, getBodyweights().filter((b) => b.id !== id));
 }
 
+export function getSettings() {
+  return readJSON(SETTINGS_KEY, {});
+}
+
+export function saveSettings(patch) {
+  const settings = { ...getSettings(), ...patch };
+  writeJSON(SETTINGS_KEY, settings);
+  return settings;
+}
+
 export function exportAll() {
   return JSON.stringify(
-    { logs: getLogs(), bodyweights: getBodyweights(), exportedAt: new Date().toISOString() },
+    { logs: getLogs(), bodyweights: getBodyweights(), settings: getSettings(), exportedAt: new Date().toISOString() },
     null,
     2
   );
@@ -76,9 +87,11 @@ export function importAll(json) {
   if (!Array.isArray(data.logs)) throw new Error("Invalid backup file: missing logs array");
   writeJSON(LOGS_KEY, data.logs);
   writeJSON(BODYWEIGHT_KEY, Array.isArray(data.bodyweights) ? data.bodyweights : []);
+  writeJSON(SETTINGS_KEY, data.settings && typeof data.settings === "object" ? data.settings : {});
 }
 
 export function resetAll() {
   localStorage.removeItem(LOGS_KEY);
   localStorage.removeItem(BODYWEIGHT_KEY);
+  localStorage.removeItem(SETTINGS_KEY);
 }

@@ -283,6 +283,37 @@ form > label { margin-bottom: 0.75rem; }
   font-size: 0.9rem;
 }
 
+.saved-toast-pr {
+  background: rgba(247,178,103,0.18);
+  color: var(--sprint);
+  border-color: var(--sprint);
+  font-weight: 600;
+}
+
+.suggestion {
+  background: rgba(125,211,192,0.1);
+  border-left: 3px solid var(--accent);
+  color: var(--text);
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin: 0 0 0.6rem;
+}
+
+.deload-banner {
+  background: rgba(247,178,103,0.15);
+  border: 1px solid var(--sprint);
+  color: var(--sprint);
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.history-card-editing {
+  border-color: var(--accent);
+}
+
 .history-list { display: flex; flex-direction: column; gap: 0.6rem; }
 
 .history-card { }
